@@ -6,6 +6,8 @@ The studio uses React and Vite on Vercel, with Firebase Authentication, Firestor
 
 ## Firebase setup
 
+The frontend defaults to the public Web App configuration for `photography-498b3`. A clean Vercel build can load the sign-in screen with that project. To use a different Firebase project, set all six required `VITE_FIREBASE_*` Web App fields together. The admin account, Firestore UID record, security rules, and Cloud Function still need to be deployed in the chosen Firebase project.
+
 1. Create a [Firebase project](https://console.firebase.google.com/) and add a Web App. Enable the Blaze billing plan for Functions and Cloud Storage. Create a Firestore database in Native mode using the default database ID and create the default Storage bucket. See the [Functions deployment guide](https://firebase.google.com/docs/functions/get-started).
 2. In Authentication, enable the Email/Password provider. Create the administrator in the Users tab and copy its UID. In Firestore, create the document `admins/primary` with a string field `uid` containing that UID. Use the Firebase console or an administrator script to edit this document. The application grants access only to that UID.
 3. Copy `.env.example` to `.env.local`. Fill in the values from the Web App SDK configuration. Keep `VITE_FIREBASE_FUNCTIONS_REGION` at `us-central1` unless you also change the deployment region in `functions/index.js`. Add `localhost` and the eventual Vercel domain in Authentication → Settings → Authorized domains.

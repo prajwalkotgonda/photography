@@ -3,13 +3,25 @@ import {getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator} f
 import {getFirestore, collection, onSnapshot, connectFirestoreEmulator} from 'firebase/firestore'
 import {getFunctions, httpsCallable, connectFunctionsEmulator} from 'firebase/functions'
 import {getStorage, ref, uploadBytes, getBlob, connectStorageEmulator} from 'firebase/storage'
-const config = {
+const studioConfig = {
+  apiKey:'AIzaSyBjoZVjIbdUzASVx-roE-uN9EiJ5eCXHWQ',
+  authDomain:'photography-498b3.firebaseapp.com',
+  projectId:'photography-498b3',
+  storageBucket:'photography-498b3.firebasestorage.app',
+  messagingSenderId:'1078949958214',
+  appId:'1:1078949958214:web:4ca726458113906e8c3047',
+  measurementId:'G-7E1HFKB8HV'
+}
+const environmentConfig = {
   apiKey:import.meta.env.VITE_FIREBASE_API_KEY, authDomain:import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId:import.meta.env.VITE_FIREBASE_PROJECT_ID, storageBucket:import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId:import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, appId:import.meta.env.VITE_FIREBASE_APP_ID
 }
+// A clean deployment uses this studio's public Firebase Web App configuration.
+// If a deployment opts into environment overrides, require a complete set.
+const config = Object.values(environmentConfig).some(Boolean) ? environmentConfig : studioConfig
 export const configured = Object.values(config).every(Boolean)
-const measurementId = import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+const measurementId = import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || config.measurementId
 const app = configured ? initializeApp({...config, ...(measurementId && {measurementId})}) : null
 if (app && import.meta.env.PROD && measurementId) {
   void import('firebase/analytics').then(async ({getAnalytics, isSupported})=>{
