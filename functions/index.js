@@ -17,10 +17,10 @@ const status = z.enum(['Active','Inactive','Archived'])
 const service = z.object({name:label,price:money,included:z.boolean()})
 const assignment = z.object({id,role:label,fee:money})
 const payment = z.object({amount:money.positive(), date, method:z.enum(methods), notes})
-const base = {name:label,date,start:time,end:time,category:label,location:label,status:z.enum(statuses),notes,assignments:z.array(assignment).max(50),advance:money,method:z.enum(methods)}
+const base = {name:label,date,start:time,end:time,category:label,location:label,status:z.enum(statuses),notes,assignments:z.array(assignment).max(50),advance:money,method:z.enum(methods),settleBalance:z.boolean().optional()}
 const catalog = {
   clients:z.object({name:label,phone,email:z.union([z.email(),z.literal('')]),address:notes,notes,status}),
-  team_members:z.object({name:label,phone,role:label,fee:money,photoPath:z.string().max(300).optional(),notes,status}),
+  team_members:z.object({name:label,phone:z.union([phone,z.literal('')]),role:label,fee:money,photoPath:z.string().max(300).optional(),notes,status}),
   packages:z.object({name:label,category:label,price:money,services:z.array(label).max(50),photographers:z.number().int().min(0).max(100),videographers:z.number().int().min(0).max(100),album:notes,additional:notes,notes,status}),
   services:z.object({name:label, price:money,status}),
   settings:z.object({name:label,status}),
@@ -129,10 +129,17 @@ export const saveRecord = onCall({region:'us-central1'}, async request=>{
           stage(clientRef,{name:row.name,phone:row.phone,email:row.email,address:row.address || '',status:'Active'})
         }
       }
-      if (sum(ledger,'amount') + (old ? 0 : row.advance) > row.amount) invalid('Payments cannot exceed the booking amount.')
-      if (!old && row.advance) stage(db.collection('payments').doc(collection+'-'+recordId+'-advance'),{
-        bookingId:recordId,source:collection,amount:row.advance,date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Kolkata'}).format(new Date()),method:row.method,notes:'Booking advance'
-      })
+      const outstanding = row.amount - sum(ledger,'amount')
+      const received = row.settleBalance ? outstanding : old ? 0 : row.advance
+      if (outstanding < 0 || received > outstanding) invalid('Payments cannot exceed the booking amount.')
+      if (received > 0) {
+        const paymentRef = row.settleBalance
+          ? db.collection('payments').doc()
+          : db.collection('payments').doc(collection+'-'+recordId+'-advance')
+        stage(paymentRef,{
+          bookingId:recordId,source:collection,amount:received,date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Kolkata'}).format(new Date()),method:row.method,notes:row.settleBalance?'Booking paid in full':'Booking advance'
+        })
+      }
       if (collection==='exposing_jobs') {
         for (const [field,name,category] of [['travel','Exposing travel','Travel'],['other','Exposing additional expenses','Other Expenses']]) {
           const expenseRef = db.collection('expenses').doc(recordId+'-'+field)
@@ -143,6 +150,7 @@ export const saveRecord = onCall({region:'us-central1'}, async request=>{
       }
       delete row.advance
       delete row.method
+      delete row.settleBalance
       delete row.packageId
     }
     if (collection==='payments' || collection==='team_payments') {

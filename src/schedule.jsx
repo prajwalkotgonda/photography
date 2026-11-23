@@ -11,6 +11,13 @@ import {bookings,byDate,currency,dateLabel,sourceLabel,today} from './model'
 import {useData} from './data'
 import {categoryOptions,RecordModal} from './forms'
 import {Badge,Heading,Modal,Panel,Select,Table} from './ui'
+import './calendar.css'
+
+const bookingColors={
+  wedding:{label:'Wedding',background:'#e4f3eb',accent:'#287453',text:'#164732'},
+  exposing:{label:'Exposing',background:'#eaf0ff',accent:'#526eb2',text:'#2b427a'},
+  cancelled:{label:'Cancelled',background:'#edf0f3',accent:'#778391',text:'#414d5b'}
+}
 
 export const bookingColumns=[['Client / studio',row=><strong>{row.name}</strong>],['Event',row=>row.category],['Schedule',row=>dateLabel(row.date)+' · '+row.start],['Location',row=>row.location],['Value',row=>currency(row.amount)],['Status',row=><Badge value={row.status}/>]]
 export function Calendar({rows,inspect,add,initialDate,visible=true}) {
@@ -20,12 +27,23 @@ export function Calendar({rows,inspect,add,initialDate,visible=true}) {
     const frame=requestAnimationFrame(()=>calendar.current?.getApi().updateSize())
     return ()=>cancelAnimationFrame(frame)
   },[visible])
-  return <FullCalendar ref={calendar} plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
-    headerToolbar={{left:'prev,next today',center:'title',right:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
-    nowIndicator dayMaxEvents={3} displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
-    events={rows.map(row=>({id:row.id,title:row.name+' · '+row.category,start:row.date+'T'+row.start,end:row.date+'T'+row.end,extendedProps:{row},color:row.status==='Cancelled'?'#8b9291':row.collection==='events'?'#176b52':'#405d9f'}))}
+  return <div className="booking-calendar">
+    <ul className="calendar-legend" aria-label="Booking colors">
+      {Object.values(bookingColors).map(({label,accent})=><li key={label}><span style={{backgroundColor:accent}} aria-hidden="true"/>{label}</li>)}
+    </ul>
+    <FullCalendar ref={calendar} plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
+    headerToolbar={{start:'title',center:'prev,next today',end:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
+    buttonText={{today:'Today',month:'Month',week:'Week',day:'Day',list:'Agenda'}}
+    viewClassNames={add?'calendar-can-book':''}
+    nowIndicator dayMaxEvents={3} eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
+    noEventsContent="No bookings in this period."
+    events={rows.map(row=>{
+      const colors=bookingColors[row.status==='Cancelled'?'cancelled':row.collection==='events'?'wedding':'exposing']
+      return {id:row.id,title:row.name+' · '+row.category,start:row.date+'T'+row.start,end:row.date+'T'+row.end,extendedProps:{row},backgroundColor:colors.background,borderColor:colors.accent,textColor:colors.text}
+    })}
     eventClick={info=>inspect(info.event.extendedProps.row)}
     dateClick={add?info=>add({date:info.dateStr.slice(0,10),...(info.allDay?{}:{start:info.dateStr.slice(11,16),end:info.dateStr.slice(11,16)<'23:00'?String(Number(info.dateStr.slice(11,13))+1).padStart(2,'0')+info.dateStr.slice(13,16):'23:59'})}):undefined}/>
+  </div>
 }
 
 export function BookingDetail({row,close,edit,pay}) {
@@ -36,7 +54,7 @@ export function BookingDetail({row,close,edit,pay}) {
   const details=[
     ['Booking ID',current.id],['Event',current.category],['Date',dateLabel(current.date)],['Time',current.start+' - '+current.end],
     ['Location',[current.venue,current.location].filter(Boolean).join(', ')],['Contact',current.phone],['Package',current.packageSnapshot?.name],
-    ['Services',current.services?.map(item=>item.name).join(', ')],['Roles',current.roles?.join(', ')],['Team',current.assignments?.map(item=>item.name+' ('+item.role+')').join(', ')],
+    ['Services',current.services?.map(item=>item.name).join(', ')],['Roles',current.roles?.join(', ')],['Team',current.assignments?.map(item=>item.name).join(', ')],
     ['Booking amount',currency(current.amount)],['Collected',currency(paidFor(ledger,current.id))],['Remaining',currency(remaining(current,ledger))],['Payment status',paymentStatus(current,ledger)],['Notes',current.notes]
   ]
   return <Modal title={current.name} close={close}><Badge value={current.status}/><dl className="detail-grid">{details.filter(([,value])=>value).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{conflicts.length>0&&<p className="form-error">Schedule overlaps with {conflicts.map(item=>item.name).join(', ')}.</p>}

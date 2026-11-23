@@ -58,6 +58,8 @@ try {
   await write('services','service',{name:'Candid Photography',price:1000,status:'Active'})
   const team={name:'Studio Photographer',phone:'9876543210',role:'Candid Photographer',fee:25000,status:'Active',photoPath:path}
   await write('team_members','member',team)
+  await write('team_members','name-only',{name:'Akshay Kumbhar',phone:'',role:'Photographer',fee:0,status:'Active'})
+  assert.equal((await read('team_members','name-only')).name,'Akshay Kumbhar')
   const pack={name:'Wedding package',category:'Wedding',price:100000,services:['Candid Photography'],photographers:1,videographers:0,status:'Active'}
   await write('packages','pack',pack)
   const wedding={name:'Example Client',phone:'8765432109',email:'',date,start:'09:00',end:'11:00',category:'Wedding',location:'Pune',venue:'Studio',status:'Confirmed',assignments:[{id:run+'-member',role:team.role,fee:team.fee}],services:[{name:'Candid Photography',price:5000,included:false}],packageId:run+'-pack',charges:0,discount:0,advance:30000,method:'UPI'}
@@ -82,6 +84,16 @@ try {
   assert.equal(results.filter(result=>result.status==='fulfilled').length,1)
   const ledger=await database.collection('payments').where('bookingId','==',run+'-wedding').get()
   assert.equal(ledger.docs.reduce((total,p)=>total+p.data().amount,0),90000)
+  const settle={...wedding,clientId:saved.clientId,settleBalance:true}
+  const settlementKey=crypto.randomUUID()
+  await write('events','wedding',settle,settlementKey)
+  await write('events','wedding',settle,settlementKey)
+  const settledLedger=await database.collection('payments').where('bookingId','==',run+'-wedding').get()
+  assert.equal(settledLedger.size,3)
+  assert.equal(settledLedger.docs.reduce((total,p)=>total+p.data().amount,0),100000)
+  await write('exposing_jobs','paid-job',{...job,date:'2026-11-24',settleBalance:true})
+  const paidJobLedger=await database.collection('payments').where('bookingId','==',run+'-paid-job').get()
+  assert.deepEqual(paidJobLedger.docs.map(p=>p.data().amount),[90000])
   await write('team_payments','team-payment',{...payment,amount:20000,memberId:run+'-member'})
   await reject(write('team_payments','overpay',{...payment,amount:6000,memberId:run+'-member'}),/outstanding assignment/i)
   const expense={name:'Album print',category:'Album Printing',amount:4000,date,source:'events',bookingId:run+'-wedding',paid:false}
