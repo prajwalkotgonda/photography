@@ -1,13 +1,13 @@
-import {useEffect,useRef,useState} from 'react'
+import {useState} from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGrid from '@fullcalendar/daygrid'
 import timeGrid from '@fullcalendar/timegrid'
 import list from '@fullcalendar/list'
 import interaction from '@fullcalendar/interaction'
-import {CalendarDays,Plus,TriangleAlert} from 'lucide-react'
+import {Plus,TriangleAlert} from 'lucide-react'
 import {useLocation} from 'react-router-dom'
 import {exposingRoles,statuses,bookingConflict,paidFor,remaining,paymentStatus} from '../functions/domain.js'
-import {bookings,byDate,currency,dateLabel,sourceLabel,today} from './model'
+import {bookings,byDate,currency,dateLabel,today} from './model'
 import {useData} from './data'
 import {categoryOptions,RecordModal} from './forms'
 import {Badge,Heading,Modal,Panel,Select,Table} from './ui'
@@ -20,20 +20,12 @@ const bookingColors={
 }
 
 export const bookingColumns=[['Client / studio',row=><strong>{row.name}</strong>],['Event',row=>row.category],['Schedule',row=>dateLabel(row.date)+' · '+row.start],['Location',row=>row.location],['Value',row=>currency(row.amount)],['Status',row=><Badge value={row.status}/>]]
-export function Calendar({rows,inspect,add,initialDate,visible=true}) {
-  const calendar=useRef(null)
-  useEffect(()=>{
-    if (!visible) return
-    const frame=requestAnimationFrame(()=>calendar.current?.getApi().updateSize())
-    return ()=>cancelAnimationFrame(frame)
-  },[visible])
+export function Calendar({rows,inspect,add,initialDate}) {
   return <div className="booking-calendar">
-    <ul className="calendar-legend" aria-label="Booking colors">
-      {Object.values(bookingColors).map(({label,accent})=><li key={label}><span style={{backgroundColor:accent}} aria-hidden="true"/>{label}</li>)}
-    </ul>
-    <FullCalendar ref={calendar} plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
+    <FullCalendar plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
     headerToolbar={{start:'title',center:'prev,next today',end:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
     buttonText={{today:'Today',month:'Month',week:'Week',day:'Day',list:'Agenda'}}
+    fixedWeekCount={false}
     viewClassNames={add?'calendar-can-book':''}
     nowIndicator dayMaxEvents={3} eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
     noEventsContent="No bookings in this period."
@@ -43,6 +35,9 @@ export function Calendar({rows,inspect,add,initialDate,visible=true}) {
     })}
     eventClick={info=>inspect(info.event.extendedProps.row)}
     dateClick={add?info=>add({date:info.dateStr.slice(0,10),...(info.allDay?{}:{start:info.dateStr.slice(11,16),end:info.dateStr.slice(11,16)<'23:00'?String(Number(info.dateStr.slice(11,13))+1).padStart(2,'0')+info.dateStr.slice(13,16):'23:59'})}):undefined}/>
+    <ul className="calendar-legend" aria-label="Booking colors">
+      {Object.values(bookingColors).map(({label,accent})=><li key={label}><span style={{backgroundColor:accent}} aria-hidden="true"/>{label}</li>)}
+    </ul>
   </div>
 }
 
@@ -69,7 +64,7 @@ export function Schedule({mode,openEditor}) {
   const [localEditor,setLocalEditor]=useState(null)
   const edit=openEditor||setLocalEditor
   const [detail,setDetail]=useState(null)
-  const [role,setRole]=useState(exposingRoles[0])
+  const [role,setRole]=useState('')
   const [source,setSource]=useState('')
   const [category,setCategory]=useState('')
   const [team,setTeam]=useState('')
@@ -87,17 +82,17 @@ export function Schedule({mode,openEditor}) {
   const initial=location.state?.recordId&&bookings(data).find(item=>item.id===location.state.recordId)
   return <>
     <Heading eyebrow="SCHEDULING" title={wedding?'Wedding bookings':exposing?'Exposing jobs':'Studio calendar'} subtitle={wedding?'Manage studio bookings, services and on-site teams.':exposing?'Manage external assignments by photography role.':'Review studio events, external jobs and team assignments.'} action={!unified&&<button className="button primary" onClick={()=>add({date:today()})}><Plus size={18}/> New booking</button>}/>
-    {exposing&&<div className="roles">{exposingRoles.map(item=><button key={item} className={'panel role-card '+(role===item?'selected':'')} aria-pressed={role===item} onClick={()=>setRole(item)}><CalendarDays size={20}/><strong>{item}</strong><span>{data.exposing_jobs.filter(row=>row.roles?.includes(item)).length} jobs</span></button>)}</div>}
-    <Panel title={exposing&&role?role:'Schedule'} action={<div className="filters">{!exposing&&<div className="segmented"><button className={view==='calendar'?'selected':''} onClick={()=>setView('calendar')}>Calendar</button><button className={view==='table'?'selected':''} onClick={()=>setView('table')}>Bookings</button></div>}</div>}>
+    <Panel title="Schedule" action={!exposing&&<div className="segmented"><button className={view==='calendar'?'selected':''} onClick={()=>setView('calendar')}>Calendar</button><button className={view==='table'?'selected':''} onClick={()=>setView('table')}>Bookings</button></div>}>
       <div className="filters filter-row">
         <input aria-label="Search bookings" placeholder="Search bookings" value={query} onChange={e=>setQuery(e.target.value)}/>
+        {exposing&&<Select aria-label="Photography role" value={role} onChange={e=>setRole(e.target.value)} placeholder="All roles" options={exposingRoles}/>}
         {unified&&<Select aria-label="Event source" value={source} onChange={e=>setSource(e.target.value)} placeholder="All events" options={[{value:'events',label:'Wedding'},{value:'exposing_jobs',label:'Exposing'}]}/>}
         <Select aria-label="Event category" value={category} onChange={e=>setCategory(e.target.value)} options={[...new Set([...categoryOptions(data),...bookings(data).map(row=>row.category)])]} placeholder="All categories"/>
         <Select aria-label="Team member" value={team} onChange={e=>setTeam(e.target.value)} options={data.team_members.map(row=>({value:row.id,label:row.name}))} placeholder="All team members"/>
         <Select aria-label="Booking status" value={status} onChange={e=>setStatus(e.target.value)} options={statuses} placeholder="All statuses"/>
       </div>
       {conflicts.length>0&&<div className="availability danger"><TriangleAlert size={18}/> {conflicts.length} bookings with overlapping assignments</div>}
-      {view==='calendar'||exposing?<div className="calendar-wrap">{exposing ? exposingRoles.map(item=><div key={item} hidden={role!==item}><Calendar visible={role===item} rows={role===item?rows:[]} initialDate={initial?.date} inspect={setDetail} add={seed=>edit({collection:'exposing_jobs',seed:{...seed,roles:[item]}})}/></div>) : <Calendar key={location.key} rows={rows} initialDate={initial?.date} inspect={setDetail} add={!unified?add:undefined}/>}</div>:<Table rows={rows} columns={bookingColumns} action={row=><button className="button secondary" onClick={()=>setDetail(row)}>Details</button>}/>}
+      {view==='calendar'||exposing?<div className="calendar-wrap"><Calendar key={location.key} rows={rows} initialDate={initial?.date} inspect={setDetail} add={!unified?add:undefined}/></div>:<Table rows={rows} columns={bookingColumns} action={row=><button className="button secondary" onClick={()=>setDetail(row)}>Details</button>}/>}
     </Panel>
     {detail&&<BookingDetail row={detail} close={()=>setDetail(null)} edit={row=>{setDetail(null);edit({collection:row.collection,row})}} pay={row=>{setDetail(null);edit({collection:'payments',seed:{bookingKey:row.collection+':'+row.id}})}}/>}
     {localEditor&&<RecordModal editor={localEditor} close={()=>setLocalEditor(null)}/>}

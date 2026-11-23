@@ -5,10 +5,10 @@
 .calendar-legend {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px 16px;
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px 1px 0;
   list-style: none;
   color: #52665d;
   font-size: .75rem;
@@ -28,8 +28,8 @@
 
 .booking-calendar .fc {
   min-width: 0;
-  --fc-border-color: #e5ebe8;
-  --fc-today-bg-color: #f0f8f3;
+  --fc-border-color: #e2e9e5;
+  --fc-today-bg-color: #eaf6ee;
   --fc-neutral-bg-color: #f5f8f6;
   --fc-button-bg-color: #fff;
   --fc-button-border-color: #dce6e0;
@@ -42,18 +42,55 @@
 }
 
 .booking-calendar .fc .fc-toolbar {
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  margin: 0 0 10px;
-  padding: 12px;
-  background: #f5f8f6;
-  border: 1px solid #e5ebe8;
-  border-radius: 10px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 4px 0;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:nth-child(2) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:last-child {
+  justify-self: end;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:last-child .fc-button-group {
+  gap: 2px;
+  padding: 3px;
+  background: #edf2ef;
+  border-radius: 9px;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:last-child .fc-button {
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:last-child .fc-button:hover {
+  background: #dfece4;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:last-child .fc-button.fc-button-active {
+  background: #fff;
+  color: #14563f;
+  box-shadow: 0 1px 3px #1b3c2926;
+}
+
+.booking-calendar .fc .fc-toolbar-chunk:nth-child(2) .fc-today-button {
+  margin: 0;
+  border-radius: 7px;
 }
 
 .booking-calendar .fc .fc-toolbar-title {
-  font-size: clamp(1rem, 2vw, 1.3rem);
-  letter-spacing: -.025em;
+  font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+  letter-spacing: -.04em;
 }
 
 .booking-calendar .fc .fc-button {
@@ -61,10 +98,6 @@
   padding: 5px 9px;
   font-size: .78rem;
   font-weight: 650;
-}
-
-.booking-calendar .fc .fc-button-active {
-  color: #fff;
 }
 
 .booking-calendar .fc .fc-view-harness {
@@ -78,18 +111,37 @@
 }
 
 .booking-calendar .fc .fc-col-header-cell {
-  background: #f5f8f6;
+  background: #eaf1ed;
 }
 
 .booking-calendar .fc .fc-col-header-cell-cushion {
   padding: 9px 2px;
   color: #52665d;
-  font-size: .75rem;
-  font-weight: 650;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
 }
 
 .booking-calendar .fc .fc-daygrid-day-top {
-  padding: 4px;
+  flex-direction: row;
+  padding: 5px 6px 2px;
+}
+
+.booking-calendar .fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+  min-height: clamp(68px, 6vw, 84px);
+}
+
+.booking-calendar .fc .fc-daygrid-day:not(.fc-day-today) {
+  background: #fff;
+}
+
+.booking-calendar .fc .fc-daygrid-day:is(.fc-day-sun, .fc-day-sat, .fc-day-other):not(.fc-day-today) {
+  background: #f6f9f7;
+}
+
+.booking-calendar .fc .fc-daygrid-day.fc-day-today {
+  box-shadow: inset 0 2px #25815e;
 }
 
 .booking-calendar .fc .fc-daygrid-day-number {
@@ -143,12 +195,13 @@
 }
 
 @media (max-width: 600px) {
-  .calendar-legend {
-    justify-content: flex-start;
+  .booking-calendar .fc .fc-toolbar {
+    grid-template-columns: 1fr auto;
   }
 
-  .booking-calendar .fc .fc-toolbar-chunk:first-child {
-    flex-basis: 100%;
+  .booking-calendar .fc .fc-toolbar-chunk:last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 
   .booking-calendar .fc .fc-timeGridWeek-view > table {
