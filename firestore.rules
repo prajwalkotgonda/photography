@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function admin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/primary)
+        && get(/databases/$(database)/documents/admins/primary).data.uid == request.auth.uid;
+    }
+    match /admins/{id} { allow get: if id == 'primary' && admin(); }
+    match /{collection}/{id} {
+      allow read: if collection in ['clients','events','exposing_jobs','team_members','packages','services','payments','expenses','team_payments','settings','audit_logs'] && admin();
+      allow write: if false;
+    }
+  }
+}

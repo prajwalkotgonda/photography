@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /team/{uid}/{file} {
+      function admin() {
+        return request.auth != null && request.auth.uid == uid &&
+          firestore.get(/databases/(default)/documents/admins/primary).data.uid == uid;
+      }
+      allow get: if admin();
+      allow create, update: if admin() && request.resource.size < 5242880 &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if admin();
+    }
+  }
+}
