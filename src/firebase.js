@@ -9,7 +9,13 @@ const config = {
   messagingSenderId:import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, appId:import.meta.env.VITE_FIREBASE_APP_ID
 }
 export const configured = Object.values(config).every(Boolean)
-const app = configured ? initializeApp(config) : null
+const measurementId = import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+const app = configured ? initializeApp({...config, ...(measurementId && {measurementId})}) : null
+if (app && import.meta.env.PROD && measurementId) {
+  void import('firebase/analytics').then(async ({getAnalytics, isSupported})=>{
+    if (await isSupported()) getAnalytics(app)
+  }).catch(error=>console.warn('Firebase Analytics could not initialize.',error))
+}
 export const auth = app && getAuth(app)
 export const db = app && getFirestore(app)
 const storage = app && getStorage(app)
