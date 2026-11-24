@@ -15,7 +15,7 @@ import './calendar.css'
 
 const bookingColors={
   wedding:{label:'Wedding',background:'#e4f3eb',accent:'#287453',text:'#164732'},
-  exposing:{label:'Exposing',background:'#eaf0ff',accent:'#526eb2',text:'#2b427a'},
+  exposing:{label:'Exposing',background:'#f0ebff',accent:'#7857de',text:'#4c3294'},
   cancelled:{label:'Cancelled',background:'#edf0f3',accent:'#778391',text:'#414d5b'}
 }
 
@@ -23,9 +23,10 @@ export const bookingColumns=[['Client / studio',row=><strong>{row.name}</strong>
 export function Calendar({rows,inspect,add,initialDate}) {
   return <div className="booking-calendar">
     <FullCalendar plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
-    headerToolbar={{start:'title',center:'prev,next today',end:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
+    headerToolbar={{start:'title',center:'dayGridMonth,timeGridWeek,timeGridDay,listMonth',end:'today prev,next'}}
     buttonText={{today:'Today',month:'Month',week:'Week',day:'Day',list:'Agenda'}}
     fixedWeekCount={false}
+    views={{dayGridMonth:{eventDisplay:'list-item'}}}
     viewClassNames={add?'calendar-can-book':''}
     nowIndicator dayMaxEvents={3} eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
     noEventsContent="No bookings in this period."
