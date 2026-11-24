@@ -1,10 +1,10 @@
 import {useState} from 'react'
 import FullCalendar from '@fullcalendar/react'
-import dayGrid from '@fullcalendar/daygrid'
 import timeGrid from '@fullcalendar/timegrid'
 import list from '@fullcalendar/list'
 import interaction from '@fullcalendar/interaction'
-import {Plus,TriangleAlert} from 'lucide-react'
+import {ChevronLeft,ChevronRight,Plus,TriangleAlert} from 'lucide-react'
+import {addMonths,eachDayOfInterval,endOfMonth,endOfWeek,format,isSameMonth,parseISO,startOfMonth,startOfWeek} from 'date-fns'
 import {useLocation} from 'react-router-dom'
 import {exposingRoles,statuses,bookingConflict,paidFor,remaining,paymentStatus} from '../functions/domain.js'
 import {bookings,byDate,currency,dateLabel,today} from './model'
@@ -18,33 +18,80 @@ const bookingColors={
   exposing:{label:'Exposing',background:'#f0ebff',accent:'#7857de',text:'#4c3294'},
   cancelled:{label:'Cancelled',background:'#edf0f3',accent:'#778391',text:'#414d5b'}
 }
+const bookingColor=row=>bookingColors[row.status==='Cancelled'?'cancelled':row.collection==='events'?'wedding':'exposing']
+const calendarViews={month:'Month',timeGridWeek:'Week',timeGridDay:'Day',listMonth:'Agenda'}
+const weekdays=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
 export const bookingColumns=[['Client / studio',row=><strong>{row.name}</strong>],['Event',row=>row.category],['Schedule',row=>dateLabel(row.date)+' · '+row.start],['Location',row=>row.location],['Value',row=>currency(row.amount)],['Status',row=><Badge value={row.status}/>]]
 export function Calendar({rows,inspect,add,initialDate}) {
+  const [view,setView]=useState('month')
+  const [selected,setSelected]=useState(()=>initialDate||today())
+  const date=parseISO(selected)
+  const currentDay=today()
+  const monthTitle=format(date,'MMMM yyyy')
+  const bookingsByDay=new Map()
+  for (const row of rows) {
+    if (!bookingsByDay.has(row.date)) bookingsByDay.set(row.date,[])
+    bookingsByDay.get(row.date).push(row)
+  }
+  const selectedRows=bookingsByDay.get(selected)||[]
+  const moveMonth=step=>setSelected(format(startOfMonth(addMonths(date,step)),'yyyy-MM-dd'))
+  const days=eachDayOfInterval({start:startOfWeek(startOfMonth(date)),end:endOfWeek(endOfMonth(date))})
+
   return <div className="booking-calendar">
-    <FullCalendar plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
+    <div className="booking-calendar-views" role="group" aria-label="Calendar view">
+      {Object.entries(calendarViews).map(([value,label])=><button type="button" key={value} aria-pressed={view===value} onClick={()=>setView(value)}>{label}</button>)}
+    </div>
+    {view==='month'?<div className="calendar-month-layout">
+      <section className="calendar-month-card" aria-label="Monthly calendar">
+        <header className="calendar-month-header">
+          <h3 aria-live="polite">{monthTitle}</h3>
+          <div className="calendar-month-nav">
+            <button type="button" className="calendar-today" onClick={()=>setSelected(currentDay)}>Today</button>
+            <button type="button" aria-label="Previous month" onClick={()=>moveMonth(-1)}><ChevronLeft size={17}/></button>
+            <button type="button" aria-label="Next month" onClick={()=>moveMonth(1)}><ChevronRight size={17}/></button>
+          </div>
+        </header>
+        <div className="calendar-month-grid">
+          {weekdays.map(day=><abbr key={day} title={day}>{day[0]}</abbr>)}
+          {days.map(day=>{
+            const key=format(day,'yyyy-MM-dd')
+            const bookings=bookingsByDay.get(key)||[]
+            const colors=[...new Set(bookings.map(bookingColor))]
+            return <button type="button" className="calendar-date" key={key} data-outside={!isSameMonth(date,day)} aria-current={key===currentDay?'date':undefined} aria-pressed={key===selected} aria-label={format(day,'EEEE, MMMM d, yyyy')+(bookings.length?', '+bookings.length+(bookings.length===1?' booking':' bookings'):'')} onClick={()=>setSelected(key)}>
+              <span className="calendar-date-number">{day.getDate()}</span>
+              <span className="calendar-dots" aria-hidden="true">{colors.map(({label,accent})=><span key={label} style={{backgroundColor:accent}}/>)}</span>
+            </button>
+          })}
+        </div>
+      </section>
+      <section className="calendar-day-card" aria-label="Bookings on selected date">
+        <header className="calendar-day-header">
+          <h3 aria-live="polite">{format(date,'EEEE, MMMM d')}</h3>
+          {add&&<button type="button" className="button secondary" onClick={()=>add({date:selected})}><Plus size={16}/> Add booking</button>}
+        </header>
+        {selectedRows.length>0?<ul className="calendar-day-bookings">
+          {selectedRows.map(row=><li key={row.collection+':'+row.id}><button type="button" onClick={()=>inspect(row)}>
+            <span className="calendar-booking-dot" style={{backgroundColor:bookingColor(row).accent}} aria-hidden="true"/>
+            <span><strong>{row.name}</strong><small>{row.start}–{row.end} · {row.category}</small></span>
+            <ChevronRight size={16} aria-hidden="true"/>
+          </button></li>)}
+        </ul>:<p className="calendar-empty">No bookings on this date.</p>}
+      </section>
+    </div>:<FullCalendar key={view} plugins={[timeGrid,list,interaction]} initialView={view} initialDate={selected} height="auto"
     headerToolbar={{start:'title',end:'today prev,next'}}
-    footerToolbar={{start:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
-    buttonText={{today:'Today',month:'Month',week:'Week',day:'Day',list:'Agenda'}}
-    fixedWeekCount={false}
-    views={{dayGridMonth:{eventDisplay:'list-item',dayHeaderFormat:{weekday:'narrow'}}}}
+    buttonText={{today:'Today'}}
+    datesSet={({view})=>setSelected(format(view.calendar.getDate(),'yyyy-MM-dd'))}
     eventInteractive
-    eventDidMount={({el,event,view})=>{
-      if (view.type!=='dayGridMonth') return
-      const {start,end}=event.extendedProps.row
-      const description=event.title+' · '+start+'–'+end
-      el.title=description
-      el.setAttribute('aria-label',description)
-    }}
     viewClassNames={add?'calendar-can-book':''}
-    nowIndicator dayMaxEvents={3} eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
+    nowIndicator eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
     noEventsContent="No bookings in this period."
     events={rows.map(row=>{
-      const colors=bookingColors[row.status==='Cancelled'?'cancelled':row.collection==='events'?'wedding':'exposing']
+      const colors=bookingColor(row)
       return {id:row.id,title:row.name+' · '+row.category,start:row.date+'T'+row.start,end:row.date+'T'+row.end,extendedProps:{row},backgroundColor:colors.background,borderColor:colors.accent,textColor:colors.text}
     })}
     eventClick={info=>inspect(info.event.extendedProps.row)}
-    dateClick={add?info=>add({date:info.dateStr.slice(0,10),...(info.allDay?{}:{start:info.dateStr.slice(11,16),end:info.dateStr.slice(11,16)<'23:00'?String(Number(info.dateStr.slice(11,13))+1).padStart(2,'0')+info.dateStr.slice(13,16):'23:59'})}):undefined}/>
+    dateClick={add?info=>add({date:info.dateStr.slice(0,10),...(info.allDay?{}:{start:info.dateStr.slice(11,16),end:info.dateStr.slice(11,16)<'23:00'?String(Number(info.dateStr.slice(11,13))+1).padStart(2,'0')+info.dateStr.slice(13,16):'23:59'})}):undefined}/>}
     <ul className="calendar-legend" aria-label="Booking colors">
       {Object.values(bookingColors).map(({label,accent})=><li key={label}><span style={{backgroundColor:accent}} aria-hidden="true"/>{label}</li>)}
     </ul>
