@@ -23,10 +23,19 @@ export const bookingColumns=[['Client / studio',row=><strong>{row.name}</strong>
 export function Calendar({rows,inspect,add,initialDate}) {
   return <div className="booking-calendar">
     <FullCalendar plugins={[dayGrid,timeGrid,list,interaction]} initialView="dayGridMonth" initialDate={initialDate} height="auto"
-    headerToolbar={{start:'title',center:'dayGridMonth,timeGridWeek,timeGridDay,listMonth',end:'today prev,next'}}
+    headerToolbar={{start:'title',end:'today prev,next'}}
+    footerToolbar={{start:'dayGridMonth,timeGridWeek,timeGridDay,listMonth'}}
     buttonText={{today:'Today',month:'Month',week:'Week',day:'Day',list:'Agenda'}}
     fixedWeekCount={false}
-    views={{dayGridMonth:{eventDisplay:'list-item'}}}
+    views={{dayGridMonth:{eventDisplay:'list-item',dayHeaderFormat:{weekday:'narrow'}}}}
+    eventInteractive
+    eventDidMount={({el,event,view})=>{
+      if (view.type!=='dayGridMonth') return
+      const {start,end}=event.extendedProps.row
+      const description=event.title+' · '+start+'–'+end
+      el.title=description
+      el.setAttribute('aria-label',description)
+    }}
     viewClassNames={add?'calendar-can-book':''}
     nowIndicator dayMaxEvents={3} eventDisplay="block" displayEventEnd eventTimeFormat={{hour:'2-digit',minute:'2-digit',hour12:false}}
     noEventsContent="No bookings in this period."
