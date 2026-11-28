@@ -8,8 +8,7 @@ service cloud.firestore {
     }
     match /admins/{id} { allow get: if id == 'primary' && admin(); }
     match /{collection}/{id} {
-      allow read: if collection in ['clients','events','exposing_jobs','team_members','packages','services','payments','expenses','team_payments','settings','audit_logs'] && admin();
-      allow write: if false;
+      allow read, write: if collection in ['clients','events','exposing_jobs','team_members','packages','services','payments','expenses','team_payments','settings','audit_logs'] && admin();
     }
   }
 }

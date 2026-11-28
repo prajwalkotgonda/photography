@@ -13,17 +13,17 @@ const studioConfig = {
   measurementId:'G-7E1HFKB8HV'
 }
 const environmentConfig = {
-  apiKey:import.meta.env.VITE_FIREBASE_API_KEY, authDomain:import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:import.meta.env.VITE_FIREBASE_PROJECT_ID, storageBucket:import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId:import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, appId:import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey:import.meta.env?.VITE_FIREBASE_API_KEY, authDomain:import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:import.meta.env?.VITE_FIREBASE_PROJECT_ID, storageBucket:import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId:import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID, appId:import.meta.env?.VITE_FIREBASE_APP_ID
 }
 // A clean deployment uses this studio's public Firebase Web App configuration.
 // If a deployment opts into environment overrides, require a complete set.
 const config = Object.values(environmentConfig).some(Boolean) ? environmentConfig : studioConfig
 export const configured = Object.values(config).every(Boolean)
-const measurementId = import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || config.measurementId
+const measurementId = import.meta.env?.VITE_FIREBASE_MEASUREMENT_ID || config.measurementId
 const app = configured ? initializeApp({...config, ...(measurementId && {measurementId})}) : null
-if (app && import.meta.env.PROD && measurementId) {
+if (app && import.meta.env?.PROD && measurementId) {
   void import('firebase/analytics').then(async ({getAnalytics, isSupported})=>{
     if (await isSupported()) getAnalytics(app)
   }).catch(error=>console.warn('Firebase Analytics could not initialize.',error))
@@ -31,8 +31,8 @@ if (app && import.meta.env.PROD && measurementId) {
 export const auth = app && getAuth(app)
 export const db = app && getFirestore(app)
 const storage = app && getStorage(app)
-const functions = app && getFunctions(app,import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1')
-if (app && import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS==='true') {
+const functions = app && getFunctions(app,import.meta.env?.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1')
+if (app && import.meta.env?.DEV && import.meta.env?.VITE_FIREBASE_EMULATORS==='true') {
   connectAuthEmulator(auth,'http://127.0.0.1:9099')
   connectFirestoreEmulator(db,'127.0.0.1',8080)
   connectFunctionsEmulator(functions,'127.0.0.1',5001)
@@ -210,7 +210,7 @@ export async function directSave(colName, id, requestId, data) {
 }
 
 export async function save(collection, id, requestId, data) {
-  if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === 'true' && functions) {
+  if (import.meta.env?.DEV && import.meta.env?.VITE_FIREBASE_EMULATORS === 'true' && functions) {
     try {
       return await httpsCallable(functions, 'saveRecord')({ collection, id, requestId, data })
     } catch (err) {

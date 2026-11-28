@@ -174,11 +174,19 @@ function RecordForm({collection,row,seed,close}) {
         }
       }
       await save(collection,id.current,operation.current.id,clean)
-      toast.success(row ? 'Changes saved (Saved record)' : 'Saved record', { duration: 4000 })
+      const recordLabel = names[collection] ? names[collection].charAt(0).toUpperCase() + names[collection].slice(1) : 'Record'
+      toast.success(row ? `${recordLabel} updated & saved!` : `${recordLabel} saved successfully!`, { duration: 4500 })
       close()
     } catch (failure) {
       console.error('Save error:', failure)
-      setError(failure.message?.includes('internal') ? 'Unable to save record. Please try again.' : (failure.message || 'Unable to save this record.'))
+      const isPermission = failure.code === 'permission-denied' || failure.message?.includes('Missing or insufficient permissions')
+      setError(
+        isPermission
+          ? 'Permission denied by Firebase. Please deploy firestore.rules to your Firebase project.'
+          : failure.message?.includes('internal')
+            ? 'Unable to save record. Please try again.'
+            : (failure.message || 'Unable to save this record.')
+      )
     } finally {pending.current=false}
   })
   return <form onSubmit={submit}>
