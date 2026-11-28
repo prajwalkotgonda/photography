@@ -36,19 +36,19 @@ function RecordForm({collection,row,seed,close}) {
   const defaults={name:'',phone:'',email:'',address:'',notes:'',date:today(),start:'09:00',end:'12:00',location:'',venue:'',category:expense?'Travel':'Wedding',status:booking?'Confirmed':'Active',method:'Cash',services:[],assignments:[],roles:[],clientId:'',packageId:'',bookingKey:'',memberId:'',photographers:0,videographers:0,album:'',additional:'',paid:false,...seed,...row}
   for (const key of amounts) defaults[key]=rupees(key==='advance'?0:defaults[key])
   defaults.packageId=row?.packageSnapshot?.id || ''
+  if (wedding) defaults.packagePrice=row?.packagePrice==null?'':rupees(row.packagePrice)
   defaults.bookingKey=row?.bookingId?row.source+':'+row.bookingId:seed?.bookingKey||''
   defaults.assignments=defaults.assignments.map(item=>({...item,fee:rupees(item.fee)}))
   if (wedding) defaults.services=defaults.services.map(item=>({...item,price:rupees(item.price)}))
-  const {register,watch,setValue,handleSubmit,formState:{isSubmitting}}=useForm({defaultValues:defaults})
+  const {register,watch,getValues,setValue,handleSubmit,formState:{isSubmitting}}=useForm({defaultValues:defaults})
   const values=watch()
   const [stage,setStage]=useState(row?1:0)
   const [error,setError]=useState('')
   const [settleBalance,setSettleBalance]=useState(false)
   const [addingName,setAddingName]=useState(false)
   const [teamName,setTeamName]=useState('')
-  const [savingName,setSavingName]=useState(false)
-  const nameSavePending=useRef(false)
   const createdMembers=useRef([])
+  const unsavedMemberIds=useRef(new Set())
   const id=useRef(row?.id || (wedding?'WED-':exposing?'EXP-':'')+crypto.randomUUID())
   const operation=useRef({})
   const file=useRef(null)
@@ -61,6 +61,10 @@ function RecordForm({collection,row,seed,close}) {
   const snapshot=row?.packageSnapshot
   if (snapshot && !packages.some(item=>item.id===snapshot.id)) packages.push(snapshot)
   const pack=values.packageId ? (snapshot?.id===values.packageId?snapshot:packages.find(item=>item.id===values.packageId)) : null
+  const selectPackage=value=>{
+    setValue('packageId',value)
+    if (wedding) setValue('packagePrice','')
+  }
   const included=pack?.services||[]
   const categories=[...new Set([...categoryOptions(data),values.category])]
   const candidate={...values,collection}
@@ -70,7 +74,7 @@ function RecordForm({collection,row,seed,close}) {
   let total=0
   let advance=0
   try {
-    total=wedding?bookingAmount({packageSnapshot:pack,services:values.services.map(item=>({...item,price:toPaise(item.price),included:included.includes(item.name)})),charges:toPaise(values.charges),discount:toPaise(values.discount)}):toPaise(values.amount)
+    total=wedding?bookingAmount({packageSnapshot:pack,packagePrice:values.packagePrice===''?undefined:toPaise(values.packagePrice),services:values.services.map(item=>({...item,price:toPaise(item.price),included:included.includes(item.name)})),charges:toPaise(values.charges),discount:toPaise(values.discount)}):toPaise(values.amount)
     advance=toPaise(values.advance)
   } catch { /* Validate on submit. */ }
   const outstanding=row ? remaining({id:row.id,amount:total},payments) : total
@@ -78,49 +82,55 @@ function RecordForm({collection,row,seed,close}) {
   const selectedPaymentStatus=alreadyPaid || settleBalance ? 'Paid' : 'Pending'
   const input=(key,label,required=false,type='text')=><Field label={label}><input {...register(key,{valueAsNumber:type==='number'})} required={required} type={type} min={type==='number'?0:undefined} maxLength={200}/></Field>
   const select=(key,label,options,placeholder)=><Field label={label}><Select {...register(key)} options={options} placeholder={placeholder} required={placeholder!==undefined}/></Field>
-  const cash=(key,label,disabled=false)=><Field label={label}><input {...register(key)} disabled={disabled} inputMode="decimal" pattern="[0-9]{0,10}([.][0-9]{1,2})?"/></Field>
+  const cash=(key,label,disabled=false,placeholder)=><Field label={label}><input {...register(key)} disabled={disabled} placeholder={placeholder} inputMode="decimal" pattern="[0-9]{0,10}([.][0-9]{1,2})?"/></Field>
   const setList=(key,value)=>setValue(key,value)
   const roster=[...data.team_members,...createdMembers.current.filter(member=>!data.team_members.some(item=>item.id===member.id))]
-  const hasStudioPhotographer=roster.some(member=>nameKey(member.name)===nameKey(studioPhotographer))
-  const availableMembers=activeRows(roster).filter(item=>!values.assignments.some(person=>person.id===item.id))
-  const studioMember=availableMembers.find(member=>nameKey(member.name)===nameKey(studioPhotographer))
-  const teamOptions=availableMembers.filter(member=>member!==studioMember).map(option)
-  if (studioMember || !hasStudioPhotographer) teamOptions.unshift({value:studioMember?.id || 'create-studio-photographer',label:studioPhotographer})
-  teamOptions.push({value:'add-name',label:'Add name'})
-  function assign(member) {
-    if (values.assignments.some(person=>person.id===member.id)) return
-    setList('assignments',[...values.assignments,{id:member.id,name:member.name,role:member.role,fee:rupees(member.fee)}])
-  }
-  async function addTeamName(input) {
-    const name=input.trim().replace(/\s+/g,' ')
-    if (nameSavePending.current || pending.current) return
-    setError('')
-    if (!name || name.length>200) {setError('Enter a team member name up to 200 characters.');return}
-    const existing=roster.find(member=>nameKey(member.name)===nameKey(name))
-    if (existing && existing.status!=='Active') {setError('Activate this team member in Team before assigning them.');return}
-    nameSavePending.current=true
-    setSavingName(true)
-    try {
-      const member=existing || {id:crypto.randomUUID(),name,phone:'',role:'Photographer',fee:0,status:'Active'}
-      if (!existing) {
-        const {id,...record}=member
-        await save('team_members',id,id,record)
-        createdMembers.current.push(member)
-      }
-      assign(member)
-      setAddingName(false)
-      setTeamName('')
-    } catch (failure) {
-      setError(failure.message || 'Unable to add this team member.')
-    } finally {
-      nameSavePending.current=false
-      setSavingName(false)
+  const studioMember=roster.find(member=>nameKey(member.name)===nameKey(studioPhotographer))
+  const studioMemberId=studioMember?.id || 'create-studio-photographer'
+  const otherMembers=activeRows(roster).filter(member=>nameKey(member.name)!==nameKey(studioPhotographer))
+  const teamOptions=[
+    {value:studioMemberId,label:studioPhotographer},
+    ...otherMembers.map(option),
+    {value:'add-name',label:'Add name'}
+  ]
+  for (const person of values.assignments) {
+    if (person && !teamOptions.some(item=>item.value===person.id)) {
+      teamOptions.splice(teamOptions.length-1,0,{value:person.id,label:person.name})
     }
+  }
+  const primaryAssignment=values.assignments[0]
+  const selectValue=addingName?'add-name':(primaryAssignment?primaryAssignment.id:'')
+  function assign(member,replacePrimary=false) {
+    const assignments=getValues('assignments')
+    const item={id:member.id,name:member.name,role:member.role||'Photographer',fee:rupees(member.fee||0)}
+    if (replacePrimary) {
+      const others=assignments.slice(1).filter(person=>person.id!==member.id)
+      setList('assignments',[item,...others])
+    } else {
+      if (assignments.some(person=>person.id===member.id)) return
+      setList('assignments',[...assignments,item])
+    }
+  }
+  function addTeamName(input,replacePrimary=false) {
+    const name=input.trim().replace(/\s+/g,' ')
+    setError('')
+    if (!name || name.length>200) {setError('Enter a team member name up to 200 characters.');return false}
+    const existing=roster.find(member=>nameKey(member.name)===nameKey(name))
+    if (existing && existing.status!=='Active') {setError('Activate this team member in Team before assigning them.');return false}
+    const member=existing || {id:crypto.randomUUID(),name,phone:'',role:'Photographer',fee:0,status:'Active'}
+    if (!existing) {
+      createdMembers.current.push(member)
+      unsavedMemberIds.current.add(member.id)
+    }
+    assign(member,replacePrimary)
+    setAddingName(false)
+    setTeamName('')
+    return true
   }
   const submit=handleSubmit(async form=>{
     if (booking&&form.end<=form.start) {setError('End time must be after start time.');return}
     if (booking&&!stage) {setStage(1);setError('');return}
-    if (pending.current || nameSavePending.current) return
+    if (pending.current) return
     pending.current=true
     setError('')
     try {
@@ -130,12 +140,17 @@ function RecordForm({collection,row,seed,close}) {
         payload[key]=toPaise(form[key])
       }
       if (booking) {
-        if (conflicts.length) throw new Error('Resolve overlapping assignments before saving.')
         if (!row && !settleBalance && total>0 && payload.advance===total) throw new Error('Select Paid to record the full booking amount.')
+        if (conflicts.length) throw new Error('Resolve overlapping assignments before saving.')
+        if (addingName && teamName.trim() && !addTeamName(teamName,true)) return
+        const assignments=getValues('assignments')
+        if (overlapping.some(item=>bookingConflict(item,{...candidate,assignments}))) throw new Error('Resolve overlapping assignments before saving.')
         payload.settleBalance=settleBalance
-        payload.assignments=form.assignments.map(item=>({...item,fee:toPaise(item.fee)}))
+        payload.assignments=assignments.map(item=>({...item,fee:toPaise(item.fee)}))
       }
       if (wedding) {
+        if (form.packagePrice==='') delete payload.packagePrice
+        else payload.packagePrice=toPaise(form.packagePrice)
         payload.services=form.services.map(item=>({...item,price:toPaise(item.price),included:included.includes(item.name)}))
         if (!form.clientId) delete payload.clientId
         if (!form.packageId) delete payload.packageId
@@ -150,13 +165,24 @@ function RecordForm({collection,row,seed,close}) {
       const clean=Object.fromEntries(Object.entries(payload).filter(([,value])=>value!==undefined))
       const signature=JSON.stringify(clean)
       if (operation.current.signature!==signature) operation.current={signature,id:crypto.randomUUID()}
+      if (booking) {
+        const assignedIds=new Set(payload.assignments.map(person=>person.id))
+        for (const {id:memberId,...record} of createdMembers.current) {
+          if (!assignedIds.has(memberId) || !unsavedMemberIds.current.has(memberId)) continue
+          await save('team_members',memberId,memberId,record)
+          unsavedMemberIds.current.delete(memberId)
+        }
+      }
       await save(collection,id.current,operation.current.id,clean)
-      toast.success(row?'Changes saved':'Record created')
+      toast.success(row ? 'Changes saved (Saved record)' : 'Saved record', { duration: 4000 })
       close()
-    } catch (failure) {setError(failure.message || 'Unable to save this record.')} finally {pending.current=false}
+    } catch (failure) {
+      console.error('Save error:', failure)
+      setError(failure.message?.includes('internal') ? 'Unable to save record. Please try again.' : (failure.message || 'Unable to save this record.'))
+    } finally {pending.current=false}
   })
   return <form onSubmit={submit}>
-    {booking&&<><div className="form-grid">{<Field label="Event category"><Select value={values.category} options={categories} onChange={e=>{setValue('category',e.target.value);setValue('packageId','')}}/></Field>}{input('date','Event date',true,'date')}{input('start','Start time',true,'time')}{input('end','End time',true,'time')}</div><div className={'availability '+(conflicts.length?'danger':'')}><strong>{values.end<=values.start?'Check event times':conflicts.length?'Booked':overlapping.length?'Partially booked':'Available'}</strong>{overlapping.length>0&&<span>{overlapping.map(item=>item.name+' ('+item.start+' - '+item.end+')').join(', ')}</span>}</div></>}
+    {booking&&<><div className="form-grid">{<Field label="Event category"><Select value={values.category} options={categories} onChange={e=>{setValue('category',e.target.value);selectPackage('')}}/></Field>}{input('date','Event date',true,'date')}{input('start','Start time',true,'time')}{input('end','End time',true,'time')}</div><div className={'availability '+(conflicts.length?'danger':'')}><strong>{values.end<=values.start?'Check event times':conflicts.length?'Booked':overlapping.length?'Partially booked':'Available'}</strong>{overlapping.length>0&&<span>{overlapping.map(item=>item.name+' ('+item.start+' - '+item.end+')').join(', ')}</span>}</div></>}
     {(!booking||stage===1)&&<>
       <div className="form-grid">
         {wedding&&<Field label="Existing client"><Select options={data.clients.map(option)} placeholder="New client" value={values.clientId} onChange={e=>{
@@ -173,7 +199,7 @@ function RecordForm({collection,row,seed,close}) {
         {collection==='packages'&&<>{select('category','Event category',categories)}{cash('price','Package price (₹)')}{input('photographers','Photographers',true,'number')}{input('videographers','Videographers',true,'number')}{input('album','Album details')}{input('additional','Additional services')}</>}
         {collection==='services'&&cash('price','Default price (₹)')}
         {collection==='team_members'&&<>{select('role','Professional role',['Photographer',...teamRoles],'Choose role')}{cash('fee','Per-event payment (₹)')}<Field label="Profile photo"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{file.current=e.target.files[0]||null}}/></Field></>}
-        {wedding&&<Field label="Package"><Select value={values.packageId} onChange={e=>setValue('packageId',e.target.value)} options={packages.map(item=>({value:item.id,label:item.name+' · '+currency(item.price)}))} placeholder="No package"/></Field>}
+        {wedding&&<Field label="Package"><Select value={values.packageId} onChange={e=>selectPackage(e.target.value)} options={packages.map(item=>({value:item.id,label:item.name+' · '+currency(item.price)}))} placeholder="No package"/></Field>}
         {transaction&&<>
           <Field label="Related booking"><Select disabled={Boolean(row?.generated)} value={values.bookingKey} onChange={e=>{setValue('bookingKey',e.target.value);setValue('memberId',seed?.memberId||'')}} options={all.map(item=>({value:item.collection+':'+item.id,label:item.name+' · '+sourceLabel(item.collection)+' · '+item.date}))} placeholder={expense?'No linked booking':'Choose booking'} required={!expense}/></Field>
           {input('date','Transaction date',true,'date')}{cash('amount','Amount (₹)',row?.generated)}
@@ -190,23 +216,30 @@ function RecordForm({collection,row,seed,close}) {
       {exposing&&<fieldset><legend>Assigned photography roles</legend><div className="check-grid">{exposingRoles.map(role=><label className="check" key={role}><input type="checkbox" checked={values.roles.includes(role)} onChange={e=>setList('roles',e.target.checked?[...values.roles,role]:values.roles.filter(item=>item!==role))}/>{role}</label>)}</div></fieldset>}
       {booking&&<fieldset><legend>Assignment</legend>
         <div className="filters">
-          <Select aria-label="Assignment name" value={addingName?'add-name':''} placeholder="Name" options={teamOptions} disabled={savingName||isSubmitting} onChange={e=>{
-            if (e.target.value==='add-name') setAddingName(true)
-            else if (e.target.value==='create-studio-photographer') void addTeamName(studioPhotographer)
-            else {
+          <Select aria-label="Assignment name" value={selectValue} placeholder="Name" options={teamOptions} disabled={isSubmitting} onChange={e=>{
+            const val=e.target.value
+            if (val==='add-name') setAddingName(true)
+            else if (val==='create-studio-photographer') {
               setAddingName(false)
-              const member=roster.find(item=>item.id===e.target.value)
-              if (member) assign(member)
+              addTeamName(studioPhotographer,true)
+            } else if (!val) {
+              setAddingName(false)
+              setList('assignments',values.assignments.slice(1))
+            } else {
+              setAddingName(false)
+              const member=roster.find(item=>item.id===val)
+              if (member) assign(member,true)
             }
           }}/>
+          {primaryAssignment&&<button type="button" className="button secondary" disabled={isSubmitting} aria-label={'Remove '+primaryAssignment.name} onClick={()=>setList('assignments',values.assignments.filter(item=>item.id!==primaryAssignment.id))}>Remove</button>}
         </div>
-        {addingName&&<div className="filters team-name-entry"><input aria-label="New team member name" placeholder="Team member name" maxLength={200} value={teamName} disabled={savingName||isSubmitting} onChange={e=>setTeamName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void addTeamName(teamName)}}}/>
-          <button type="button" className="button primary" disabled={!teamName.trim()||savingName||isSubmitting} onClick={()=>addTeamName(teamName)}>{savingName?'Adding…':'Add to assignment'}</button>
+        {addingName&&<div className="filters team-name-entry"><input aria-label="New team member name" placeholder="Team member name" maxLength={200} value={teamName} disabled={isSubmitting} onChange={e=>setTeamName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addTeamName(teamName,true)}}}/>
+          <button type="button" className="button primary" disabled={!teamName.trim()||isSubmitting} onClick={()=>addTeamName(teamName,true)}>Add to assignment</button>
         </div>}
-        {values.assignments.map(person=><div className="assignment" key={person.id}><strong>{person.name}</strong><button type="button" className="button secondary" disabled={savingName||isSubmitting} aria-label={'Remove '+person.name} onClick={()=>setList('assignments',values.assignments.filter(item=>item.id!==person.id))}>Remove</button></div>)}
+        {values.assignments.slice(1).map(person=><div className="assignment" key={person.id}><strong>{person.name}</strong><button type="button" className="button secondary" disabled={isSubmitting} aria-label={'Remove '+person.name} onClick={()=>setList('assignments',values.assignments.filter(item=>item.id!==person.id))}>Remove</button></div>)}
       </fieldset>}
       {booking&&<fieldset><legend>Financial details</legend><div className="form-grid">
-        {wedding?<><Field label="Package price"><output>{currency(pack?.price)}</output></Field>{cash('charges','Additional charges (₹)')}{cash('discount','Discount (₹)')}</>:<>{cash('amount','Booking amount (₹)')}{cash('travel','Travel expenses (₹)')}{cash('other','Other expenses (₹)')}</>}
+        {wedding?<>{cash('packagePrice','Package price (₹)',false,rupees(pack?.price))}{cash('charges','Additional charges (₹)')}{cash('discount','Discount (₹)')}</>:<>{cash('amount','Booking amount (₹)')}{cash('travel','Travel expenses (₹)')}{cash('other','Other expenses (₹)')}</>}
         <Field label="Payment status"><Select options={['Paid','Pending']} value={selectedPaymentStatus} disabled={alreadyPaid} onChange={e=>setSettleBalance(e.target.value==='Paid')}/></Field>
         {!row&&!settleBalance&&cash('advance','Advance received (₹)')}
         {(!row||settleBalance)&&select('method','Payment method',methods)}
@@ -215,6 +248,6 @@ function RecordForm({collection,row,seed,close}) {
       {!booking&&<Field label="Notes"><textarea rows="3" maxLength={4000} {...register('notes')}/></Field>}
     </>}
     {error&&<p className="form-error" role="alert">{error}</p>}
-    <div className="form-actions"><button className="button secondary" type="button" disabled={isSubmitting||savingName} onClick={close}>Cancel</button><button className="button primary" disabled={isSubmitting||savingName}>{isSubmitting?'Saving…':booking&&!stage?'Check availability & continue':'Save record'}</button></div>
+    <div className="form-actions"><button className="button secondary" type="button" disabled={isSubmitting} onClick={close}>Cancel</button><button className="button primary" disabled={isSubmitting}>{isSubmitting?'Saving…':booking&&!stage?'Check availability & continue':'Save record'}</button></div>
   </form>
 }

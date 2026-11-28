@@ -2,6 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {bookingConflict,bookingAmount,overlaps,remaining,toPaise} from '../functions/domain.js'
 
+test('a booking can override the catalog price or set a price without a package',()=>{
+  const packageSnapshot={price:500000}
+  assert.equal(bookingAmount({packageSnapshot,packagePrice:350000,charges:1000}),351000)
+  assert.equal(bookingAmount({packageSnapshot,packagePrice:0}),0)
+  assert.equal(bookingAmount({packagePrice:350000}),350000)
+  assert.equal(bookingAmount({packageSnapshot}),500000)
+})
+
 test('paise conversion is precise and rejects excess precision and negative input',()=>{
   assert.equal(toPaise('1000000000.09'),100000000009)
   assert.equal(toPaise('0.1')+toPaise('0.2'),30)

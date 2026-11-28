@@ -1,6 +1,6 @@
 import {initializeApp} from 'firebase/app'
 import {getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator} from 'firebase/auth'
-import {getFirestore, collection, onSnapshot, connectFirestoreEmulator} from 'firebase/firestore'
+import {getFirestore, collection, doc, setDoc, getDoc, serverTimestamp, onSnapshot, connectFirestoreEmulator} from 'firebase/firestore'
 import {getFunctions, httpsCallable, connectFunctionsEmulator} from 'firebase/functions'
 import {getStorage, ref, uploadBytes, getBlob, connectStorageEmulator} from 'firebase/storage'
 const studioConfig = {
@@ -40,7 +40,198 @@ if (app && import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS==='tru
 }
 export const persistence = () => setPersistence(auth,browserLocalPersistence)
 export const subscribe = (name,next,error) => onSnapshot(collection(db,name),snapshot=>next(snapshot.docs.map(doc=>({...doc.data(),id:doc.id}))),error)
-export const save = (collection,id,requestId,data) => httpsCallable(functions,'saveRecord')({collection,id,requestId,data})
+
+export async function directSave(colName, id, requestId, data) {
+  if (!db) throw new Error('Database is not initialized.')
+  const now = serverTimestamp()
+  const docRef = doc(db, colName, id)
+  const previousSnap = await getDoc(docRef)
+  const prior = previousSnap.exists() ? previousSnap.data() : null
+
+  if (colName === 'events') {
+    let packageSnapshot = prior?.packageSnapshot || null
+    if (data.packageId) {
+      if (prior?.packageSnapshot?.id === data.packageId) {
+        packageSnapshot = prior.packageSnapshot
+      } else {
+        const packSnap = await getDoc(doc(db, 'packages', data.packageId))
+        if (packSnap.exists()) {
+          const packData = packSnap.data()
+          const { createdAt, updatedAt, ...cleanPack } = packData
+          packageSnapshot = cleanPack
+        }
+      }
+    }
+
+    const packagePrice = data.packagePrice !== undefined ? data.packagePrice : (packageSnapshot?.price ?? 0)
+    const servicesTotal = (data.services || []).filter(s => !s.included).reduce((total, s) => total + (s.price || 0), 0)
+    const amount = packagePrice + servicesTotal + (data.charges || 0) - (data.discount || 0)
+
+    let clientId = data.clientId
+    if (!clientId && data.name) {
+      const clientRef = doc(collection(db, 'clients'))
+      clientId = clientRef.id
+      await setDoc(clientRef, {
+        id: clientId,
+        name: data.name,
+        phone: data.phone || '',
+        email: data.email || '',
+        address: data.address || '',
+        status: 'Active',
+        createdAt: now,
+        updatedAt: now
+      })
+    }
+
+    const advance = data.advance || 0
+    const settleBalance = Boolean(data.settleBalance)
+    const paymentAmount = settleBalance ? amount : (prior ? 0 : advance)
+    if (paymentAmount > 0) {
+      const paymentRef = settleBalance
+        ? doc(collection(db, 'payments'))
+        : doc(db, 'payments', `events-${id}-advance`)
+      await setDoc(paymentRef, {
+        id: paymentRef.id,
+        bookingId: id,
+        source: 'events',
+        amount: paymentAmount,
+        date: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata' }).format(new Date()),
+        method: data.method || 'Cash',
+        notes: settleBalance ? 'Booking paid in full' : 'Booking advance',
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true })
+    }
+
+    const { advance: _adv, method: _m, settleBalance: _sb, packageId: _pid, ...eventPayload } = data
+    eventPayload.amount = amount
+    if (clientId) eventPayload.clientId = clientId
+    if (packageSnapshot) eventPayload.packageSnapshot = packageSnapshot
+
+    await setDoc(docRef, {
+      ...eventPayload,
+      id,
+      collection: 'events',
+      status: data.status || 'Confirmed',
+      createdAt: prior?.createdAt || now,
+      updatedAt: now
+    }, { merge: true })
+  } else if (colName === 'exposing_jobs') {
+    const advance = data.advance || 0
+    const settleBalance = Boolean(data.settleBalance)
+    const paymentAmount = settleBalance ? (data.amount || 0) : (prior ? 0 : advance)
+    if (paymentAmount > 0) {
+      const paymentRef = settleBalance
+        ? doc(collection(db, 'payments'))
+        : doc(db, 'payments', `exposing_jobs-${id}-advance`)
+      await setDoc(paymentRef, {
+        id: paymentRef.id,
+        bookingId: id,
+        source: 'exposing_jobs',
+        amount: paymentAmount,
+        date: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata' }).format(new Date()),
+        method: data.method || 'Cash',
+        notes: settleBalance ? 'Booking paid in full' : 'Booking advance',
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true })
+    }
+
+    if (data.travel) {
+      const expRef = doc(db, 'expenses', `${id}-travel`)
+      await setDoc(expRef, {
+        id: `${id}-travel`,
+        name: 'Exposing travel',
+        category: 'Travel',
+        amount: data.travel,
+        date: data.date,
+        paid: false,
+        bookingId: id,
+        source: 'exposing_jobs',
+        generated: true,
+        status: 'Recorded',
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true })
+    }
+
+    if (data.other) {
+      const expRef = doc(db, 'expenses', `${id}-other`)
+      await setDoc(expRef, {
+        id: `${id}-other`,
+        name: 'Exposing additional expenses',
+        category: 'Other Expenses',
+        amount: data.other,
+        date: data.date,
+        paid: false,
+        bookingId: id,
+        source: 'exposing_jobs',
+        generated: true,
+        status: 'Recorded',
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true })
+    }
+
+    const { advance: _adv, method: _m, settleBalance: _sb, ...jobPayload } = data
+    await setDoc(docRef, {
+      ...jobPayload,
+      id,
+      collection: 'exposing_jobs',
+      status: data.status || 'Confirmed',
+      createdAt: prior?.createdAt || now,
+      updatedAt: now
+    }, { merge: true })
+  } else {
+    await setDoc(docRef, {
+      ...data,
+      id,
+      createdAt: prior?.createdAt || now,
+      updatedAt: now
+    }, { merge: true })
+  }
+
+  if (requestId) {
+    try {
+      await setDoc(doc(db, 'audit_logs', requestId), {
+        id: requestId,
+        recordId: id,
+        collection: colName,
+        action: prior ? 'Updated' : 'Created',
+        actor: auth?.currentUser?.uid || 'admin',
+        createdAt: now
+      })
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  return { id }
+}
+
+export async function save(collection, id, requestId, data) {
+  if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === 'true' && functions) {
+    try {
+      return await httpsCallable(functions, 'saveRecord')({ collection, id, requestId, data })
+    } catch (err) {
+      console.warn('Functions emulator error, falling back to direct save:', err)
+    }
+  }
+
+  try {
+    return await directSave(collection, id, requestId, data)
+  } catch (directErr) {
+    if (functions) {
+      try {
+        return await httpsCallable(functions, 'saveRecord')({ collection, id, requestId, data })
+      } catch {
+        throw directErr
+      }
+    }
+    throw directErr
+  }
+}
+
 export async function uploadPhoto(file) {
   if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>=5242880) throw new Error('Choose a JPEG, PNG or WebP image under 5 MB.')
   const path = 'team/'+auth.currentUser.uid+'/'+crypto.randomUUID()

@@ -27,7 +27,7 @@ const catalog = {
 }
 const schemas = {
   ...catalog,
-  events:z.object({...base,clientId:id.optional(),phone,email:z.union([z.email(),z.literal('')]),address:notes,venue:label,packageId:id.optional(),services:z.array(service).max(50),charges:money,discount:money}),
+  events:z.object({...base,clientId:id.optional(),phone,email:z.union([z.email(),z.literal('')]),address:notes,venue:label,packageId:id.optional(),packagePrice:money.optional(),services:z.array(service).max(50),charges:money,discount:money}),
   exposing_jobs:z.object({...base,phone,roles:z.array(z.enum(exposingRoles)).min(1).max(4),amount:money,travel:money,other:money}),
   payments:payment.extend({bookingId:id,source:z.enum(bookingCollections)}),
   team_payments:payment.extend({bookingId:id,source:z.enum(bookingCollections),memberId:id}),

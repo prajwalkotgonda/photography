@@ -14,7 +14,7 @@ export const sum = (rows, field) => rows.reduce((total,row) => total + (row[fiel
 export const paidFor = (payments, id) => sum(payments.filter(p => p.bookingId === id),'amount')
 export const remaining = (row,payments) => row.amount - paidFor(payments,row.id)
 export const paymentStatus = (row,payments) => remaining(row,payments) === 0 ? 'Paid' : paidFor(payments,row.id) ? 'Part paid' : 'Pending'
-export const bookingAmount = row => (row.packageSnapshot?.price || 0) +
+export const bookingAmount = row => (row.packagePrice ?? row.packageSnapshot?.price ?? 0) +
   sum((row.services || []).filter(service => !service.included),'price') + (row.charges || 0) - (row.discount || 0)
 export function toPaise(input) {
   const value = String(input ?? '').trim()
